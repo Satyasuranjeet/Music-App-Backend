@@ -18,13 +18,63 @@ if not os.path.exists(MUSIC_DIR):
     os.makedirs(MUSIC_DIR)
     logger.warning(f"Created music directory at {MUSIC_DIR}")
 
-@app.route('/')
-def home():
-    """Home route to check if the server is running."""
-    return jsonify({"message": "Music streaming server is running!"})
+def stream_file(file_path):
+    """Stream a file in chunks using range requests."""
+    range_header = request.headers.get('Range')
+    if not range_header:
+        # If no range header, send the entire file
+        return send_from_directory(MUSIC_DIR, os.path.basename(file_path))
+
+    # Parse the range header
+    size = os.path.getsize(file_path)
+    start, end = 0, size - 1
+
+    range_ = range_header.split('=')[1]
+    if '-' in range_:
+        start, end = range_.split('-')
+        start = int(start)
+        end = int(end) if end else size - 1
+
+    # Ensure the range is valid
+    if start >= size or end >= size or start > end:
+        abort(416, description="Requested Range Not Satisfiable")
+
+    # Calculate the chunk length
+    chunk_length = end - start + 1
+
+    # Open the file and seek to the start position
+    with open(file_path, 'rb') as f:
+        f.seek(start)
+        chunk = f.read(chunk_length)
+
+    # Create a response with status code 206 (Partial Content)
+    response = Response(
+        chunk,
+        206,  # Partial Content
+        mimetype='audio/mpeg',  # Adjust based on file type
+        content_type='audio/mpeg',  # Adjust based on file type
+        direct_passthrough=True,
+    )
+
+    # Set headers for range support
+    response.headers.add(
+        'Content-Range',
+        f'bytes {start}-{end}/{size}'
+    )
+    response.headers.add(
+        'Accept-Ranges',
+        'bytes'
+    )
+    response.headers.add(
+        'Content-Length',
+        str(chunk_length)
+    )
+
+    return response
 
 @app.route('/stream/<filename>')
 def stream(filename):
+    """Stream a music file with range request support."""
     try:
         file_path = os.path.join(MUSIC_DIR, filename)
         if not os.path.exists(file_path):
@@ -32,7 +82,8 @@ def stream(filename):
             abort(404, description="File not found")
 
         logger.debug(f"Streaming file: {filename}")
-        return stream_file(file_path)  # Use the range request handler
+        return stream_file(file_path)
+
     except Exception as e:
         logger.error(f"Error streaming file: {e}")
         abort(500, description="Internal server error")
