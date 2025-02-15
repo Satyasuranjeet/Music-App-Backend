@@ -25,7 +25,6 @@ def home():
 
 @app.route('/stream/<filename>')
 def stream(filename):
-    """Stream a music file."""
     try:
         file_path = os.path.join(MUSIC_DIR, filename)
         if not os.path.exists(file_path):
@@ -33,8 +32,7 @@ def stream(filename):
             abort(404, description="File not found")
 
         logger.debug(f"Streaming file: {filename}")
-        return send_from_directory(MUSIC_DIR, filename, mimetype='audio/mpeg')
-
+        return stream_file(file_path)  # Use the range request handler
     except Exception as e:
         logger.error(f"Error streaming file: {e}")
         abort(500, description="Internal server error")
